@@ -1,13 +1,18 @@
 //HW5
-
-int main(int args, char* argv[])
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <stdbool.h>
+int main(int argc, char* argv[])
 {
 	bool opt_h = false;
 	bool opt_d = false;
 	bool opt_m = false;
 	bool opt_t = false;
 	char* d_arg = "";
-	int opt = getopt(arc, argv, "hd:mt"); {
+	int opt = getopt(argc, argv, "hd:mt"); {
 
 	while (opt != -1) {
 
@@ -28,7 +33,7 @@ int main(int args, char* argv[])
 			
 		}
 
-		opt = getopt(arc, argv, "hd:mt");
+		opt = getopt(argc, argv, "hd:mt");
 	}
 
 	if (opt_h == true) {
@@ -46,6 +51,5 @@ int main(int args, char* argv[])
 	if (opt_t == true) {
 
 	}
-
 	return 1;
 }
