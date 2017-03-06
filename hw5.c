@@ -12,10 +12,8 @@ int main(int argc, char* argv[])
 	bool opt_m = false;
 	bool opt_t = false;
 	char* d_arg = "";
-	int opt = getopt(argc, argv, "hd:mt"); {
-
+	int opt = getopt(argc, argv, "hd:mt");
 	while (opt != -1) {
-
 		if (opt == 'h'){
 			opt_h = true;
 		}
