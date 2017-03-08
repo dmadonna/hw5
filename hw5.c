@@ -9,6 +9,10 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <pwd.h>
+#include <grp.h>
+#include <time.h>
+#include <utime.h>
 
 
 /* 
@@ -26,18 +30,15 @@ o7
 things to do:
 	* allow custom backup directory... (Ryland can finish this)
 	* allow timestamp backup filenames...
-	* disable meta-data copying... (very easy) (Ryland can finish this)
 	* help output...
-	* need to change meta to copy group and owner data, as well as time and type... (Ryland can finish this)
 	* figure out how to catch when the file is deleted (currently doesnt work...)
 */
 
 int copy_file(char* backup_path, char* file_name, int target_fd, int rev_count, char** file_name_buffer)
 {
 	char buffer[2056];
-	strcpy(buffer, backup_path);
+	strcat(buffer, backup_path);
 	char temp[1024];
-	strcat(temp, file_name);
 	strcat(temp, "_rev");
 	char count[32];
 	sprintf(count, "%d", rev_count);
@@ -49,7 +50,7 @@ int copy_file(char* backup_path, char* file_name, int target_fd, int rev_count, 
 	{
 		ssize_t result = read(target_fd, &buffer[0], sizeof(buffer));
 		if(!result) break;
-		assert(result > 0);
+		//assert(result > 0);
 		write(backup_fd, &buffer[0], result);
 	}
 	return 0;
@@ -57,14 +58,18 @@ int copy_file(char* backup_path, char* file_name, int target_fd, int rev_count, 
 
 int copy_meta(char* target_path, char* backup_path, char* current_backup_filename)
 {
+	// do some stuff to get the direct backup file path...
 	char temp[1024];
 	strcpy(temp, backup_path);
 	char temp2[1024];
 	strcpy(temp2, current_backup_filename);
 	strcat(temp, temp2);
 	char* current_full_path = temp;
+
+	// make some structs to handle permissions...
 	struct stat target_stats;
 	struct stat backup_stats;
+	// get the target file's permissions
 	int err = stat(target_path, &target_stats);
 	if(err == -1)
 	{
@@ -77,10 +82,29 @@ int copy_meta(char* target_path, char* backup_path, char* current_backup_filenam
 		printf("failed to locate backup file's meta!\n");
 		return 1;
 	}
-
+	// copy the permissions from the target to the backup.
 	if(chmod(current_full_path, target_stats.st_mode) == -1)
 	{
 		printf("dont have permissions to change file modes...\n");
+		return 1;
+	}
+
+	// try to copy the user data...
+
+	if(chown(current_full_path, target_stats.st_uid, target_stats.st_gid) == -1)
+	{
+		printf("failed to copy user flags to backup!\n");
+		return 1;
+	}
+
+	// get the timestamp from the target file...
+	struct utimbuf target_time;
+	target_time.actime = target_stats.st_ctime;
+	target_time.modtime = target_stats.st_mtime;
+	// try to copy the timestamp to the backup...
+	if(utime(current_full_path, &target_time) == -1)
+	{
+		printf("failed to creation time to backup!\n");
 		return 1;
 	}
 	return 0;
@@ -89,7 +113,6 @@ int copy_meta(char* target_path, char* backup_path, char* current_backup_filenam
 
 int main(int argc, char* argv[])
 {
-
 	//argument interpretation...
 	// option flags
 	bool opt_t = false, opt_d = false, opt_m = false;
@@ -109,7 +132,7 @@ int main(int argc, char* argv[])
 	char* file_name;
 	// newest backup filename...
 	char* current_backup_file;
-	int opt = getopt(argc, argv, "hd:mt");
+	int opt = getopt(argc, argv, "hdmt");
 	while(opt != -1)
 	{
 		if(opt == 'h')
@@ -122,6 +145,7 @@ int main(int argc, char* argv[])
 		{
 			opt_d = true;
 			backup_path = argv[optind];
+			printf("%s\n", backup_path);
 		}
 		else if (opt == 'm')
 		{
@@ -131,16 +155,17 @@ int main(int argc, char* argv[])
 		{
 			opt_t = true;
 		}
-		opt = getopt(argc, argv, "hd:mt");
+		opt = getopt(argc, argv, "hdmt");
 	}
 
 	//get the file path...
-	target_file_path = argv[optind];
+	target_file_path = argv[argc-1];
+	printf("%s\n", target_file_path);
 	// figure out file name...
 	file_name = strrchr(target_file_path, '/');
 	if(file_name == NULL)
 	{
-		file_name = argv[optind];
+		file_name = argv[argc-1];
 	}
 
 	// see if we can create a valid inotify hook...
@@ -167,6 +192,7 @@ int main(int argc, char* argv[])
 		strcat(cwd, "/backup/");
 		// hold this as our backup path for later use...
 		backup_path = cwd;
+		printf("%s\n", backup_path);
 		if(mkdir(cwd, S_IRWXU | S_IRWXG | S_IRWXO) == -1)
 		{
 			// did we fail because the directory already exists?
@@ -179,20 +205,47 @@ int main(int argc, char* argv[])
 			}
 			
 		}
+	}
+	else
+	{
+		// check if the given directory exists...
+		// stackoverflow.com/questions/12510874
+		struct stat directory_stats;
+		printf("%s\n", backup_path);
+		int check = stat(backup_path, &directory_stats);
+		if(check == -1)
+		{
+			printf("super fail!\n");
+			return 1;
+		}
+		if((directory_stats.st_mode & S_IFDIR) == 0)
+		{
+			printf("directory specified does not exist!\n");
+			return 1;
+		}
+	}
+	printf("%s\n", backup_path);
 
-		// create a file in our directory!
-		char buffer[2056];
-		strcpy(buffer, target_file_path);
-		target_fd = open(buffer, O_RDONLY);
-		// create a copy of the file to our backup directory...
-		char* current_backup_filename;
-		copy_file(backup_path, file_name, target_fd, revision_count, &current_backup_filename);
+	// create a file in our directory!
+	char buffer[2056];
+	strcat(buffer, target_file_path);
+	target_fd = open(buffer, O_RDONLY);
+	// create a copy of the file to our backup directory...
+	printf("%s\n", file_name);
+	printf("%s\n", backup_path);
+	char* current_backup_filename;
+	copy_file(backup_path, file_name, target_fd, revision_count, &current_backup_filename);
+	//  check to see if we want to copy meta...
+	if(!opt_m)
+	{
 		// copy meta data...
 		copy_meta(file_name, backup_path, current_backup_filename);
-		// increment file count...
-		revision_count++;
 	}
+	
+	// increment file count...
+	revision_count++;
 
+	printf("%s\n", target_file_path);
 	// begin watching the file...
 	int wd = inotify_add_watch(inotify_fd, target_file_path, IN_OPEN | IN_MODIFY | IN_DELETE | IN_DELETE_SELF | IN_IGNORED);
 	if(wd)
@@ -216,8 +269,12 @@ int main(int argc, char* argv[])
 				{
 					printf("file modified!\n");
 					copy_file(backup_path, file_name, target_fd, revision_count, &current_backup_filename);
-					// copy meta data...
-					copy_meta(file_name, backup_path, current_backup_filename);
+					//  check to see if we want to copy meta...
+					if(!opt_m)
+					{
+						// copy meta data...
+						copy_meta(file_name, backup_path, current_backup_filename);
+					}
 					// increment file count...
 					revision_count++;
 					break;
