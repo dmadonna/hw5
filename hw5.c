@@ -167,6 +167,11 @@ int main(int argc, char* argv[])
 		opt = getopt(argc, argv, "hdmt");
 	}
 
+	if (argc == 1) {
+		printf("No Argument! Usage Information: FILE_NAME this watches the specified file, -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
+		return 1;
+	}
+
 	//get the file path...
 	target_file_path = argv[argc-1];
 	printf("%s\n", target_file_path);
