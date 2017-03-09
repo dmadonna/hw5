@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
 	{
 		if(opt == 'h')
 		{
-			printf("Usage Information: -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
+			printf("Usage Information: FILE_NAME this watches the specified file, -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
 			return EXIT_SUCCESS;
 			//e_arg = argv[optind];
 		}
@@ -154,6 +154,11 @@ int main(int argc, char* argv[])
 		else if (opt == 't')
 		{
 			opt_t = true;
+		}
+		else if (opt == '?')
+		{
+			printf("No argument present! FILE_NAME this watches the specified file, -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
+			return EXIT_SUCCESS;
 		}
 		opt = getopt(argc, argv, "hdmt");
 	}
