@@ -33,12 +33,10 @@ things to do:
 	* figure out how to catch when the file is deleted (currently doesnt work...)
 */
 
-int copy_file(char* backup_path, char* file_name,  int target_fd, int rev_count, char** file_name_buffer)
+int copy_file(char** backup_path, char* file_name,  int target_fd, int rev_count, char** file_name_buffer)
 {
-	printf("biffer: %s\n", backup_path);
 	char buffer[2056] = "";
-	strcat(buffer, backup_path);
-	printf("biffer: %s\n", buffer);
+	strcat(buffer, *backup_path);
 	char temp[1024] = "";
 	strcat(temp, file_name);
 	strcat(temp, "_rev");
@@ -47,7 +45,6 @@ int copy_file(char* backup_path, char* file_name,  int target_fd, int rev_count,
 	strcat(temp, count);
 	*file_name_buffer = temp;
 	strcat(buffer, temp);
-	printf("biffer: %s\n", buffer);
 	int backup_fd = open(buffer, O_CREAT | O_RDWR | O_APPEND);
 	while(1)
 	{
@@ -56,17 +53,16 @@ int copy_file(char* backup_path, char* file_name,  int target_fd, int rev_count,
 		//assert(result > 0);
 		write(backup_fd, &buffer[0], result);
 	}
-	printf("biffer: %s\n", backup_path);
 	return 0;
 }
 
-int copy_meta(char* target_path, char* backup_path, char* current_backup_filename)
+int copy_meta(char* target_path, char** backup_path, char* current_backup_filename)
 {
 	// do some stuff to get the direct backup file path...
 	char temp[1024] = "";
-	strcpy(temp, backup_path);
+	strcat(temp, *backup_path);
 	char temp2[1024] = "";
-	strcpy(temp2, current_backup_filename);
+	strcat(temp2, current_backup_filename);
 	strcat(temp, temp2);
 	char* current_full_path = temp;
 
@@ -148,7 +144,7 @@ int main(int argc, char* argv[])
 		else if (opt == 'd')
 		{
 			opt_d = true;
-			backup_path = argv[optind];
+			strcpy(backup_path, argv[optind]);
 			printf("%s\n", backup_path);
 		}
 		else if (opt == 'm')
@@ -165,11 +161,6 @@ int main(int argc, char* argv[])
 			return EXIT_SUCCESS;
 		}
 		opt = getopt(argc, argv, "hdmt");
-	}
-
-	if (argc == 1) {
-		printf("No Argument! Usage Information: FILE_NAME this watches the specified file, -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
-		return 1;
 	}
 
 	//get the file path...
@@ -206,9 +197,9 @@ int main(int argc, char* argv[])
 		// if we can then make a backup directory inside cwd/backup/
 		strcat(cwd, "/backup/");
 		// hold this as our backup path for later use...
-		backup_path = cwd;
+		backup_path = strcpy(backup_path, cwd);
 
-		printf("bk%s\n", backup_path);
+
 		if(mkdir(cwd, S_IRWXU | S_IRWXG | S_IRWXO) == -1)
 		{
 			// did we fail because the directory already exists?
@@ -227,7 +218,6 @@ int main(int argc, char* argv[])
 		// check if the given directory exists...
 		// stackoverflow.com/questions/12510874
 		struct stat directory_stats;
-		printf("%s\n", backup_path);
 		int check = stat(backup_path, &directory_stats);
 		if(check == -1)
 		{
@@ -242,39 +232,39 @@ int main(int argc, char* argv[])
 	}
 
 	// create a file in our directory!
-	printf("bk%s\n", backup_path);
 	target_fd = open(target_file_path, O_RDONLY);
 	if(target_fd == -1)
 	{
-		printf("lost the file?\n");
+		printf("please select a file that exists...\n");
 		return 1;
 	}
 	// create a copy of the file to our backup directory...
 	char* current_backup_filename;
-	printf("sdfdsfdsf%s\n", backup_path);
-	copy_file(backup_path, file_name, target_fd, revision_count, &current_backup_filename);
+	copy_file(&backup_path, file_name, target_fd, revision_count, &current_backup_filename);
 	//  check to see if we want to copy meta...
 	if(!opt_m)
 	{
 		// copy meta data...
-		copy_meta(target_file_path, backup_path, current_backup_filename);
+		copy_meta(target_file_path, &backup_path, current_backup_filename);
 	}
-	
+
 	// increment file count...
 	revision_count++;
 
-	printf("%s\n", target_file_path);
 	// begin watching the file...
 	int wd = inotify_add_watch(inotify_fd, target_file_path, IN_OPEN | IN_MODIFY | IN_DELETE | IN_DELETE_SELF | IN_IGNORED);
 	if(wd)
 	{
+		
 		int r = 0;
-		char buf[512] = "";
+		char buf[512];
 		int buf_len = 512;
 		char* p;
+
 		while(true)
 		{
 			r = read(inotify_fd, buf, buf_len);
+
 			for(p = buf; p < buf + r;)
 			{
 				struct inotify_event* event = (struct inotify_event*)p;
@@ -286,12 +276,12 @@ int main(int argc, char* argv[])
 				if(event->mask == IN_MODIFY)
 				{
 					printf("file modified!\n");
-					copy_file(backup_path, file_name, target_fd, revision_count, &current_backup_filename);
+					copy_file(&backup_path, file_name, target_fd, revision_count, &current_backup_filename);
 					//  check to see if we want to copy meta...
 					if(!opt_m)
 					{
 						// copy meta data...
-						copy_meta(target_file_path, backup_path, current_backup_filename);
+						copy_meta(target_file_path, &backup_path, current_backup_filename);
 					}
 					// increment file count...
 					revision_count++;
