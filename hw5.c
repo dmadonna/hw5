@@ -70,6 +70,7 @@ int copy_meta(char* target_path, char* backup_path, char* current_backup_filenam
 	struct stat target_stats;
 	struct stat backup_stats;
 	// get the target file's permissions
+	printf("%s\n", target_path);
 	int err = stat(target_path, &target_stats);
 	if(err == -1)
 	{
@@ -90,7 +91,6 @@ int copy_meta(char* target_path, char* backup_path, char* current_backup_filenam
 	}
 
 	// try to copy the user data...
-
 	if(chown(current_full_path, target_stats.st_uid, target_stats.st_gid) == -1)
 	{
 		printf("failed to copy user flags to backup!\n");
@@ -163,6 +163,7 @@ int main(int argc, char* argv[])
 	printf("%s\n", target_file_path);
 	// figure out file name...
 	file_name = strrchr(target_file_path, '/');
+	printf("%s\n", target_file_path);
 	if(file_name == NULL)
 	{
 		file_name = argv[argc-1];
@@ -192,7 +193,7 @@ int main(int argc, char* argv[])
 		strcat(cwd, "/backup/");
 		// hold this as our backup path for later use...
 		backup_path = cwd;
-		printf("%s\n", backup_path);
+		//printf("%s\n", backup_path);
 		if(mkdir(cwd, S_IRWXU | S_IRWXG | S_IRWXO) == -1)
 		{
 			// did we fail because the directory already exists?
@@ -211,7 +212,7 @@ int main(int argc, char* argv[])
 		// check if the given directory exists...
 		// stackoverflow.com/questions/12510874
 		struct stat directory_stats;
-		printf("%s\n", backup_path);
+		printf("%s\n", target_file_path);
 		int check = stat(backup_path, &directory_stats);
 		if(check == -1)
 		{
@@ -224,30 +225,36 @@ int main(int argc, char* argv[])
 			return 1;
 		}
 	}
-	printf("%s\n", backup_path);
 
 	// create a file in our directory!
+	printf("%s\n", target_file_path);
 	char buffer[2056];
-	strcat(buffer, target_file_path);
-	target_fd = open(buffer, O_RDONLY);
+	strcat(buffer, file_name);
+	printf("%s\n", buffer);
+	target_fd = open(target_file_path, O_RDONLY);
+	if(target_fd == -1)
+	{
+		printf("lost the file?\n");
+		return 1;
+	}
 	// create a copy of the file to our backup directory...
-	printf("%s\n", file_name);
-	printf("%s\n", backup_path);
 	char* current_backup_filename;
+	printf("sdfdsfdsf%s\n", file_name);
 	copy_file(backup_path, file_name, target_fd, revision_count, &current_backup_filename);
 	//  check to see if we want to copy meta...
 	if(!opt_m)
 	{
 		// copy meta data...
-		copy_meta(file_name, backup_path, current_backup_filename);
+		copy_meta(target_file_path, backup_path, current_backup_filename);
 	}
 	
 	// increment file count...
 	revision_count++;
 
 	printf("%s\n", target_file_path);
+	printf("sdfdsfdsf%s\n", file_name);
 	// begin watching the file...
-	int wd = inotify_add_watch(inotify_fd, target_file_path, IN_OPEN | IN_MODIFY | IN_DELETE | IN_DELETE_SELF | IN_IGNORED);
+	int wd = inotify_add_watch(inotify_fd, file_name, IN_OPEN | IN_MODIFY | IN_DELETE | IN_DELETE_SELF | IN_IGNORED);
 	if(wd)
 	{
 		int r = 0;
@@ -273,7 +280,7 @@ int main(int argc, char* argv[])
 					if(!opt_m)
 					{
 						// copy meta data...
-						copy_meta(file_name, backup_path, current_backup_filename);
+						copy_meta(target_file_path, backup_path, current_backup_filename);
 					}
 					// increment file count...
 					revision_count++;
