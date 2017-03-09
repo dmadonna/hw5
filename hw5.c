@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
 	{
 		if(opt == 'h')
 		{
-			printf("Usage Information: -d BACKUP_LOCATION, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
+			printf("Usage Information: -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
 			return EXIT_SUCCESS;
 			//e_arg = argv[optind];
 		}
