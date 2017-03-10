@@ -32,11 +32,34 @@ things to do:
 	* help output...
 	* figure out how to catch when the file is deleted (currently doesnt work...)
 */
-
-int copy_file(char** backup_path, char* file_name,  int target_fd, int rev_count, char** file_name_buffer)
+int copy_file_time(char* backup_path, char* file_name,  int target_fd, int rev_count, char** file_name_buffer)
 {
 	char buffer[2056] = "";
-	strcat(buffer, *backup_path);
+	strcat(buffer, backup_path);
+	char temp[1024] = "";
+	strcat(temp, file_name);
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t); // SOURCE: stackoverflow.com/questions/1442116
+	sprintf(temp, "%s_%d%d%d%d%d%d\n", temp, tm.tm_year +1900, tm.tm_mon +1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	printf("file name: %s\n", temp);
+	*file_name_buffer = temp;
+	strcat(buffer, temp);
+	int backup_fd = open(buffer, O_CREAT | O_RDWR | O_APPEND);
+	while(1)
+	{
+		ssize_t result = read(target_fd, &buffer[0], sizeof(buffer));
+		if(!result) break;
+		//assert(result > 0);
+		write(backup_fd, &buffer[0], result);
+	}
+	return 0;
+}
+
+
+int copy_file(char* backup_path, char* file_name,  int target_fd, int rev_count, char** file_name_buffer)
+{
+	char buffer[2056] = "";
+	strcat(buffer, backup_path);
 	char temp[1024] = "";
 	strcat(temp, file_name);
 	strcat(temp, "_rev");
@@ -116,8 +139,9 @@ int main(int argc, char* argv[])
 	//argument interpretation...
 	// option flags
 	bool opt_t = false, opt_d = false, opt_m = false;
+	char* d_arg = "";
 	// the potential backup path
-	char* backup_path;
+	char* backup_path = (char *) malloc(100);
 	// the path to our file
 	char* target_file_path;
 	// backup file descriptor hook
@@ -132,7 +156,7 @@ int main(int argc, char* argv[])
 	char* file_name;
 	// newest backup filename...
 	char* current_backup_file;
-	int opt = getopt(argc, argv, "hdmt");
+	int opt = getopt(argc, argv, "hd:mt");
 	while(opt != -1)
 	{
 		if(opt == 'h')
@@ -144,8 +168,7 @@ int main(int argc, char* argv[])
 		else if (opt == 'd')
 		{
 			opt_d = true;
-			strcpy(backup_path, argv[optind]);
-			printf("%s\n", backup_path);
+			d_arg = strdup(optarg);
 		}
 		else if (opt == 'm')
 		{
@@ -162,17 +185,29 @@ int main(int argc, char* argv[])
 		}
 		opt = getopt(argc, argv, "hdmt");
 	}
+	if(opt_d){
+		backup_path = d_arg;
+		printf("back up path = %s\n", backup_path);
+	}
 
 	//get the file path...
 	target_file_path = argv[argc-1];
-	printf("%s\n", target_file_path);
-	// figure out file name...
-	file_name = strrchr(target_file_path, '/');
-	printf("%s\n", target_file_path);
-	if(file_name == NULL)
-	{
-		file_name = argv[argc-1];
+	if(access( target_file_path, F_OK)!= -1){} // SOURCE: stackoverflow.com/questions/230062 
+	else{
+		if(strcmp(target_file_path, d_arg) == 0){
+			printf("You must provide another argument: the file you want to copy and monitor\n");
+			return EXIT_FAILURE;
+		}
+		else{
+			printf("the file %s does not exist\n", target_file_path);
+			return EXIT_FAILURE;
+		}
 	}
+
+	// figure out file name...
+	printf("target file path = %s\n", target_file_path);
+	file_name = strrchr(target_file_path, '/');
+	printf("file name = %s\n", file_name);
 
 	// see if we can create a valid inotify hook...
 	inotify_fd = inotify_init();
@@ -181,7 +216,6 @@ int main(int argc, char* argv[])
 		printf("failed inotify hook! no idea how that happens...\n");
 		return 1;
 	}
-
 	// did the user specify a directory?
 	if(!opt_d)
 	{
@@ -191,56 +225,53 @@ int main(int argc, char* argv[])
 		if(getcwd(cwd, sizeof(cwd)) == NULL)
 		{
 			printf("failed to get current working directory!\n");
-			return 1;
+			return EXIT_FAILURE;
 		}
 
 		// if we can then make a backup directory inside cwd/backup/
 		strcat(cwd, "/backup/");
 		// hold this as our backup path for later use...
-		backup_path = strcpy(backup_path, cwd);
-
-
-		if(mkdir(cwd, S_IRWXU | S_IRWXG | S_IRWXO) == -1)
+		strcpy(backup_path, cwd);
+		if(mkdir(backup_path, S_IRWXU | S_IRWXG | S_IRWXO) != 0)
 		{
-			// did we fail because the directory already exists?
-
-			if(errno != EEXIST)
-			{	
-				// if the directory doesnt exist then close...
-				printf("failed to create backup directory!\n");
-				return 1;
-			}
-			
+			printf("failed to create backup directory!\n");
+			printf("does the file already exist?\n");
+			return EXIT_FAILURE;
 		}
 	}
 	else
-	{
+	{ 
 		// check if the given directory exists...
 		// stackoverflow.com/questions/12510874
 		struct stat directory_stats;
 		int check = stat(backup_path, &directory_stats);
 		if(check == -1)
 		{
-			printf("super fail!\n");
-			return 1;
+			printf("directory specified does not exist!\n");
+			return EXIT_FAILURE;
 		}
 		if((directory_stats.st_mode & S_IFDIR) == 0)
 		{
-			printf("directory specified does not exist!\n");
-			return 1;
+			printf("That is not a directory\n");
+			return EXIT_FAILURE;
 		}
 	}
 
 	// create a file in our directory!
-	target_fd = open(target_file_path, O_RDONLY);
+	target_fd = open(target_file_path, O_CREAT | O_RDWR);
 	if(target_fd == -1)
 	{
 		printf("please select a file that exists...\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	// create a copy of the file to our backup directory...
 	char* current_backup_filename;
-	copy_file(&backup_path, file_name, target_fd, revision_count, &current_backup_filename);
+	if (opt_t){
+		copy_file_time(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
+	}else{
+		copy_file(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
+	}
+	printf("after copy\n");
 	//  check to see if we want to copy meta...
 	if(!opt_m)
 	{
@@ -276,7 +307,7 @@ int main(int argc, char* argv[])
 				if(event->mask == IN_MODIFY)
 				{
 					printf("file modified!\n");
-					copy_file(&backup_path, file_name, target_fd, revision_count, &current_backup_filename);
+					copy_file(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
 					//  check to see if we want to copy meta...
 					if(!opt_m)
 					{
@@ -298,7 +329,7 @@ int main(int argc, char* argv[])
 	else
 	{
 		printf("failed to watch file...\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
 }
