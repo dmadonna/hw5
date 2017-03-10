@@ -51,7 +51,7 @@ int copy_file_time(char* backup_path, char* file_name,  int target_fd, char** fi
 		//assert(result > 0);
 		write(backup_fd, &buffer[0], result);
 	}
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 
@@ -70,12 +70,12 @@ int copy_file(char* backup_path, char* file_name,  int target_fd, int rev_count,
 	int backup_fd = open(buffer, O_CREAT | O_RDWR | O_APPEND);
 	while(1)
 	{
-		ssize_t result = read(target_fd, &buffer[0], sizeof(buffer));
+		ssize_t result = read(target_fd, &buffer[30], sizeof(buffer));
 		if(!result) break;
 		//assert(result > 0);
-		write(backup_fd, &buffer[0], result);
+		write(backup_fd, &buffer[30], result);
 	}
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 int copy_meta(char* target_path, char** backup_path, char* current_backup_filename)
@@ -96,26 +96,26 @@ int copy_meta(char* target_path, char** backup_path, char* current_backup_filena
 	if(err == -1)
 	{
 		printf("failed to locate target file's meta!\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	err = stat(current_full_path, &backup_stats);
 	if(err == -1)
 	{
 		printf("failed to locate backup file's meta!\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 	// copy the permissions from the target to the backup.
 	if(chmod(current_full_path, target_stats.st_mode) == -1)
 	{
 		printf("dont have permissions to change file modes...\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	// try to copy the user data...
 	if(chown(current_full_path, target_stats.st_uid, target_stats.st_gid) == -1)
 	{
 		printf("failed to copy user flags to backup!\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	// get the timestamp from the target file...
@@ -126,9 +126,9 @@ int copy_meta(char* target_path, char** backup_path, char* current_backup_filena
 	if(utime(current_full_path, &target_time) == -1)
 	{
 		printf("failed to creation time to backup!\n");
-		return 1;
+		return EXIT_FAILURE;
 	}
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 
@@ -283,7 +283,9 @@ int main(int argc, char* argv[])
 	if(!opt_m)
 	{
 		// copy meta data...
-		copy_meta(target_file_path, &backup_path, current_backup_filename);
+		if (copy_meta(target_file_path, &backup_path, current_backup_filename) != 0){
+			return EXIT_FAILURE;
+		}
 	}
 
 	// increment file count...
@@ -306,12 +308,14 @@ int main(int argc, char* argv[])
 				printf("error reading from buffer\n");
 				return EXIT_FAILURE;
 			}
+			
 			for(p = buf; p < buf + r;)
 			{
 				struct inotify_event* event = (struct inotify_event*)p;
+
 				if( (event->mask & IN_MODIFY) != 0)
 				{
-					printf("file modified!\n");
+					printf("file modified\n");
 					if (opt_t){
 						copy_file_time(backup_path, target_file_path, target_fd, &current_backup_filename);
 					}else{
@@ -321,23 +325,22 @@ int main(int argc, char* argv[])
 					if(!opt_m)
 					{
 						// copy meta data...
-						copy_meta(target_file_path, &backup_path, current_backup_filename);
+						if (copy_meta(target_file_path, &backup_path, current_backup_filename)!= 0){
+							return EXIT_FAILURE;
+						}
 					}
+					revision_count++;
 				}
-				if( (event->mask & IN_DELETE) != 0){
+				if( (event->mask & IN_DELETE) != 0 || (event->mask & IN_DELETE_SELF) != 0 || (event->mask & IN_IGNORED) != 0){
 					printf("original file deleted!\n");
 					return EXIT_SUCCESS;
-					// increment file count...
-					revision_count++;
+					
 					break;
 				}
-				if( (event->mask & IN_OPEN) != 0)
-				{
-					printf("file opened!\n");
-					break;
-				}
+				
 				p += sizeof(struct inotify_event) + event->len;
 			}
+			
 		}
 	} 
 	else
