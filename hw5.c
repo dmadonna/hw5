@@ -32,7 +32,7 @@ things to do:
 	* help output...
 	* figure out how to catch when the file is deleted (currently doesnt work...)
 */
-int copy_file_time(char* backup_path, char* file_name,  int target_fd, int rev_count, char** file_name_buffer)
+int copy_file_time(char* backup_path, char* file_name,  int target_fd, char** file_name_buffer)
 {
 	char buffer[2056] = "";
 	strcat(buffer, backup_path);
@@ -41,7 +41,6 @@ int copy_file_time(char* backup_path, char* file_name,  int target_fd, int rev_c
 	time_t t = time(NULL);
 	struct tm tm = *localtime(&t); // SOURCE: stackoverflow.com/questions/1442116
 	sprintf(temp, "%s_%d%d%d%d%d%d\n", temp, tm.tm_year +1900, tm.tm_mon +1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-	printf("file name: %s\n", temp);
 	*file_name_buffer = temp;
 	strcat(buffer, temp);
 	int backup_fd = open(buffer, O_CREAT | O_RDWR | O_APPEND);
@@ -93,7 +92,6 @@ int copy_meta(char* target_path, char** backup_path, char* current_backup_filena
 	struct stat target_stats;
 	struct stat backup_stats;
 	// get the target file's permissions
-	printf("%s\n", target_path);
 	int err = stat(target_path, &target_stats);
 	if(err == -1)
 	{
@@ -141,7 +139,7 @@ int main(int argc, char* argv[])
 	bool opt_t = false, opt_d = false, opt_m = false;
 	char* d_arg = "";
 	// the potential backup path
-	char* backup_path = (char *) malloc(100);
+	char* backup_path  = (char *) malloc(100);
 	// the path to our file
 	char* target_file_path;
 	// backup file descriptor hook
@@ -168,7 +166,8 @@ int main(int argc, char* argv[])
 		else if (opt == 'd')
 		{
 			opt_d = true;
-			d_arg = strdup(optarg);
+			backup_path = strdup(optarg);
+			//d_arg = strcpy(optarg);
 		}
 		else if (opt == 'm')
 		{
@@ -183,11 +182,7 @@ int main(int argc, char* argv[])
 			printf("Invalid Option, Available Options: -d optional->BACKUP_LOCATION otherwise a backup folder will be made, -m: Sets default permissions for new copy, -t: Change the time of the original file to time backup occured\n");
 			return EXIT_SUCCESS;
 		}
-		opt = getopt(argc, argv, "hdmt");
-	}
-	if(opt_d){
-		backup_path = d_arg;
-		printf("back up path = %s\n", backup_path);
+		opt = getopt(argc, argv, "hd:mt");
 	}
 
 	//get the file path...
@@ -205,9 +200,9 @@ int main(int argc, char* argv[])
 	}
 
 	// figure out file name...
-	printf("target file path = %s\n", target_file_path);
+	// this isnt always an actual path, it only is if the user enters a path to a file as the file.
+	// so honestly this thing is kind of shit; dont rely on it for now.
 	file_name = strrchr(target_file_path, '/');
-	printf("file name = %s\n", file_name);
 
 	// see if we can create a valid inotify hook...
 	inotify_fd = inotify_init();
@@ -232,11 +227,15 @@ int main(int argc, char* argv[])
 		strcat(cwd, "/backup/");
 		// hold this as our backup path for later use...
 		strcpy(backup_path, cwd);
+
 		if(mkdir(backup_path, S_IRWXU | S_IRWXG | S_IRWXO) != 0)
 		{
-			printf("failed to create backup directory!\n");
-			printf("does the file already exist?\n");
-			return EXIT_FAILURE;
+			// we dont want this to go off if the directory already exists...
+			if(errno != EEXIST)
+			{	
+				printf("failed to create backup directory!\n");
+				return EXIT_FAILURE;
+			}
 		}
 	}
 	else
@@ -255,7 +254,15 @@ int main(int argc, char* argv[])
 			printf("That is not a directory\n");
 			return EXIT_FAILURE;
 		}
+		// this will check to see if our path ends with a / and puts one on if it doesnt.
+		if(strrchr(backup_path, '/') != NULL)
+		{
+			strcat(backup_path, "/");
+		}
 	}
+
+
+	printf("backup path: %s\n", backup_path);
 
 	// create a file in our directory!
 	target_fd = open(target_file_path, O_CREAT | O_RDWR);
@@ -267,11 +274,11 @@ int main(int argc, char* argv[])
 	// create a copy of the file to our backup directory...
 	char* current_backup_filename;
 	if (opt_t){
-		copy_file_time(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
+		copy_file_time(backup_path, target_file_path, target_fd, &current_backup_filename);
 	}else{
 		copy_file(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
 	}
-	printf("after copy\n");
+
 	//  check to see if we want to copy meta...
 	if(!opt_m)
 	{
@@ -307,7 +314,11 @@ int main(int argc, char* argv[])
 				if(event->mask == IN_MODIFY)
 				{
 					printf("file modified!\n");
-					copy_file(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
+					if (opt_t){
+						copy_file_time(backup_path, target_file_path, target_fd, &current_backup_filename);
+					}else{
+						copy_file(backup_path, target_file_path, target_fd, revision_count, &current_backup_filename);
+					}
 					//  check to see if we want to copy meta...
 					if(!opt_m)
 					{
