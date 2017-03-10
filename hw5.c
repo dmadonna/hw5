@@ -302,16 +302,14 @@ int main(int argc, char* argv[])
 		while(true)
 		{
 			r = read(inotify_fd, buf, buf_len);
-
+			if(r < 0){
+				printf("error reading from buffer\n");
+				return EXIT_FAILURE;
+			}
 			for(p = buf; p < buf + r;)
 			{
 				struct inotify_event* event = (struct inotify_event*)p;
-				p += sizeof(struct inotify_event) + event->len;
-				if(event->mask == IN_DELETE || event->mask == IN_DELETE_SELF || event->mask == IN_IGNORED){
-					printf("original file deleted!\n");
-					return EXIT_SUCCESS;
-				}
-				if(event->mask == IN_MODIFY)
+				if( (event->mask & IN_MODIFY) != 0)
 				{
 					printf("file modified!\n");
 					if (opt_t){
@@ -325,15 +323,20 @@ int main(int argc, char* argv[])
 						// copy meta data...
 						copy_meta(target_file_path, &backup_path, current_backup_filename);
 					}
+				}
+				if( (event->mask & IN_DELETE) != 0){
+					printf("original file deleted!\n");
+					return EXIT_SUCCESS;
 					// increment file count...
 					revision_count++;
 					break;
 				}
-				if(event->mask == IN_OPEN)
+				if( (event->mask & IN_OPEN) != 0)
 				{
 					printf("file opened!\n");
 					break;
 				}
+				p += sizeof(struct inotify_event) + event->len;
 			}
 		}
 	} 
